@@ -1,2 +1,5 @@
 ### JetBrains IDE
 .idea/
+
+### Other
+.DS_Store
