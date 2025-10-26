@@ -69,6 +69,7 @@ const MaximalCodeSize=262144;
       MaximalAlfa=20;
       MaximalStringLength=255;
       MaximalCases=256;
+      MaximalFunctions = 4096;
 
       OPNone=-1;
       OPAdd=0;
@@ -219,6 +220,39 @@ type TAlfa=array[1..MaximalAlfa] of char;
       SubType:integer;
       Fields:integer;
      end;
+    
+     TBTBCHeader = packed record   { 64 bytes, LE }
+      Magic: array[0..3] of char;      { 'B','T','B','C' }
+      Version: word;                   { =1 }
+      Flags:   word;                   { =0, reserved }
+      EntryCodeOff:        longword;  { offset in Code section }
+      ConstOff, ConstSize: longword;  { =0 }
+      TypeOff, TypeSize:   longword;  { =0 }
+      GDataSize:           longword;  { global data size (zero-init) }
+      FTabOff, FTabSize:   longword;
+      CodeOff, CodeSize:   longword;
+      DbgOff, DbgSize:     longword;  { =0 }
+     end;
+
+     TBTBCFunc = packed record          { 32 bytes }
+      Id:         longword;
+      NameIdx:    longword;            { 0xFFFFFFFF, if no name }
+      Level:      word;                { FunctionLevel }
+      HasSL:      word;                { 0/1 }
+      LocalsSize: longword;            { size of local vars (ENTER/LEAVE) }
+      ArgsBytes:  longword;            { args sum size (байт) }
+      CodeOff:    longword;            { offset of function code block in Code section }
+      CodeSize:   longword;            { length of function code block }
+     end;
+
+var FuncCount: integer = 0;
+    Funcs: array[0..MaximalFunctions-1] of TBTBCFunc;
+
+    FuncIdentIdx: array[0..MaximalFunctions-1] of integer; { index in Identifiers[] }
+    FuncStartPC:  array[0..MaximalFunctions-1] of integer; { FunctionAddress (PC) }
+
+    PCToOff: array[0..MaximalCodeSize-1] of longword;  { byte offset for every PC }
+    TotalCodeSize: longword;
 
 var CurrentChar:char;
     CurrentColumn:integer;
@@ -241,6 +275,7 @@ var CurrentChar:char;
     Code:array[0..MaximalCodeSize] of integer;
     CodePosition:integer;
     StackPosition:integer;
+    OutputBTBC:boolean = false;
 
 function StringCompare(var s1,s2:TAlfa):boolean;
 var f:boolean;
