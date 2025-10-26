@@ -2888,6 +2888,105 @@ begin
   Result := 0;
 end;
 
+procedure WriteBTBCModule;
+var
+  H: TBTBCHeader;
+  hdrPos, ftabPos, codePos: longword;
+
+  procedure WriteHeaderPlaceholder;
+  var k: integer;
+  begin
+    for k := 1 to SizeOf(TBTBCHeader) do EmitByte(0);
+  end;
+
+  procedure WriteFunctionTable;
+  var i: integer; rec: TBTBCFunc;
+  begin
+    for i := 0 to FuncCount-1 do begin
+      rec := Funcs[i];
+      EmitInt32(rec.Id);
+      EmitInt32(rec.NameIdx);
+      EmitInt16(rec.Level);
+      EmitInt16(rec.HasSL);
+      EmitInt32(rec.LocalsSize);
+      EmitInt32(rec.ArgsBytes);
+      EmitInt32(rec.CodeOff);
+      EmitInt32(rec.CodeSize);
+    end;
+  end;
+
+  procedure WriteCode;
+  var
+    pc, op, val, targetPC: integer;
+    rel: longint;
+    codeStartOff, currRelBase: longword;
+  begin
+    codeStartOff := OutputCodeDataSize;
+    pc := 0;
+    while pc < CodePosition do begin
+      op := Code[pc];
+      EmitByte(byte(op));
+      if op >= OPLdC then begin
+        val := Code[pc+1];
+        if (op = OPJmp) or (op = OPJZ) then begin
+          targetPC := val;
+          currRelBase := (OutputCodeDataSize - codeStartOff) + 4;
+          rel := longint(PCToOff[targetPC]) - longint(currRelBase);
+          EmitInt32(rel);
+        end else if (op = OPCall) then begin
+          EmitInt32( FindFuncIdByPC(val) );
+        end else begin
+          EmitInt32(val);
+        end;
+      end;
+      if op >= OPLdC then Inc(pc,2) else Inc(pc,1);
+    end;
+  end;
+
+begin
+  { metadata }
+  CollectFunctions;
+  BuildPCToOff;
+  FinalizeFunctions;
+
+  { placeholder }
+  OutAlign4;
+  hdrPos := OutputCodeDataSize;
+  WriteHeaderPlaceholder;
+
+  { TODO: ConstPool/TypeTable/Dbg }
+
+  { FunctionTable }
+  OutAlign4;
+  ftabPos := OutputCodeDataSize;
+  WriteFunctionTable;
+
+  { Code }
+  OutAlign4;
+  codePos := OutputCodeDataSize;
+  WriteCode;
+
+  FillChar(H, SizeOf(H), 0);
+  H.Magic[0] := 'B'; H.Magic[1] := 'T'; H.Magic[2] := 'B'; H.Magic[3] := 'C';
+  H.Version      := 1;
+  H.Flags        := 0;
+  H.EntryCodeOff := 0;
+  H.ConstOff     := 0; H.ConstSize := 0;
+  H.TypeOff      := 0; H.TypeSize  := 0;
+  H.GDataSize    := ComputeGlobalDataSize;
+  H.FTabOff      := ftabPos;
+  H.FTabSize     := OutputCodeDataSize - ftabPos;
+  H.CodeOff      := codePos;
+  H.CodeSize     := OutputCodeDataSize - codePos;
+  H.DbgOff       := 0; H.DbgSize := 0;
+
+  { rewrite Header }
+  WriteAt(hdrPos, @H, SizeOf(H));
+
+  { to STDOUT }
+  WriteOutputCode;
+end;
+
 begin
  StringCopy(Keywords[SymBEGIN],'BEGIN               ');
  StringCopy(Keywords[SymEND],'END                 ');
