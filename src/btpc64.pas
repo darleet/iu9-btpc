@@ -2977,9 +2977,9 @@ begin
   H.ConstOff     := 0; H.ConstSize := 0;
   H.TypeOff      := 0; H.TypeSize  := 0;
   H.GDataSize    := ComputeGlobalDataSize;
-  H.FTabOff      := ftabPos;
+  H.FTabOff      := ftabPos-1;
   H.FTabSize     := ftabSz;
-  H.CodeOff      := codePos;
+  H.CodeOff      := codePos-1;
   H.CodeSize     := codeSz;
   H.DbgOff       := 0; H.DbgSize := 0;
 
