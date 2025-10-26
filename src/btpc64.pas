@@ -2775,7 +2775,10 @@ var
 begin
   FuncCount := 0;
   for i := 1 to IdentifierPosition do
-    if Identifiers[i].Kind = IdFUNC then begin
+    if (Identifiers[i].Kind = IdFUNC)
+      and (Identifiers[i].FunctionLevel >= 0)
+      and (Identifiers[i].FunctionAddress >= 0)
+    then begin
       if FuncCount >= MaximalFunctions then Halt(99);
       FuncIdentIdx[FuncCount] := i;
       FuncStartPC[FuncCount]  := Identifiers[i].FunctionAddress;
