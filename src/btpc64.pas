@@ -2759,6 +2759,135 @@ begin
  WriteOutputCode;
 end;
 
+procedure OutAlign4;
+begin
+  while (OutputCodeDataSize and 3) <> 0 do EmitByte(0);
+end;
+
+procedure WriteAt(Ofs: longword; Buf: pointer; Len: longword);
+begin
+  Move(Buf^, OutputCodeData[Ofs], Len);
+end;
+
+procedure CollectFunctions;
+var
+  i: integer;
+begin
+  FuncCount := 0;
+  for i := 1 to IdentifierPosition do
+    if Identifiers[i].Kind = IdFUNC then begin
+      if FuncCount >= MaximalFunctions then Halt(99);
+      FuncIdentIdx[FuncCount] := i;
+      FuncStartPC[FuncCount]  := Identifiers[i].FunctionAddress;
+      FillChar(Funcs[FuncCount], SizeOf(TBTBCFunc), 0);
+      Funcs[FuncCount].Id      := FuncCount;
+      Funcs[FuncCount].Level   := Identifiers[i].FunctionLevel;
+      Funcs[FuncCount].HasSL   := ord(Identifiers[i].FunctionLevel > 0);
+      Funcs[FuncCount].NameIdx := $FFFFFFFF;                               { TODO: names for funcs }
+      Inc(FuncCount);
+    end;
+end;
+
+procedure BuildPCToOff;
+var
+  pc: integer;
+  off: longword;
+  op: integer;
+begin
+  off := 0;
+  pc  := 0;
+  while pc < CodePosition do begin
+    PCToOff[pc] := off;
+    op := Code[pc];
+    Inc(off, 1);                           { opcode }
+    if op >= OPLdC then Inc(off, 4);       { imm32 }
+    if op >= OPLdC then Inc(pc, 2) else Inc(pc, 1);
+  end;
+  TotalCodeSize := off;
+end;
+
+function ComputeGlobalDataSize: longword;
+var
+  i, sz, ofs, gmax, t: integer;
+begin
+  gmax := 0;
+  for i := 1 to IdentifierPosition do
+    if (Identifiers[i].Kind = IdVAR) and (Identifiers[i].VariableLevel = 0) then begin
+      t   := Identifiers[i].TypeDefinition;
+      sz  := Types[t].Size;
+      ofs := Identifiers[i].VariableAddress;
+      if (ofs + sz) > gmax then gmax := ofs + sz;
+    end;
+  Result := (gmax + 3) and not 3; { pad to 4 }
+end;
+
+function SumArgsBytes(FuncIdentIndex: integer): longword;
+var
+  p, t, last: integer;
+  sz: longword;
+begin
+  Result := 0;
+  last := Identifiers[FuncIdentIndex].LastParameter;
+  if last = 0 then exit;
+  p := FuncIdentIndex + 1;
+  while p <= last do begin
+    if Identifiers[p].ReferencedParameter then
+      sz := 4
+    else begin
+      t := Identifiers[p].TypeDefinition;
+      sz := Types[t].Size;
+    end;
+    if (sz and 3) <> 0 then sz := (sz + 3) and not 3; { pad to 4 }
+    Inc(Result, sz);
+    Inc(p);
+  end;
+end;
+
+function FirstAdjSInRange(A, B: integer): longint;
+var
+  pc: integer;
+begin
+  Result := 0;
+  pc := A;
+  while pc < B do begin
+    if Code[pc] = OPAdjS then begin
+      Result := Code[pc+1];  { imm32 }
+      exit;
+    end;
+    if Code[pc] >= OPLdC then Inc(pc,2) else Inc(pc,1);
+  end;
+end;
+
+procedure FinalizeFunctions;
+var
+  i, fstart, fend, nextStart, idIdx: integer;
+begin
+  for i := 0 to FuncCount-1 do begin
+    idIdx  := FuncIdentIdx[i];
+    fstart := FuncStartPC[i];
+    if i < FuncCount-1 then nextStart := FuncStartPC[i+1]
+                        else nextStart := CodePosition;
+    fend := nextStart;
+
+    Funcs[i].CodeOff    := PCToOff[fstart];
+    Funcs[i].CodeSize   := PCToOff[fend] - PCToOff[fstart];
+    Funcs[i].LocalsSize := FirstAdjSInRange(fstart, fend);
+    Funcs[i].ArgsBytes  := SumArgsBytes(idIdx);
+  end;
+end;
+
+function FindFuncIdByPC(PCStart: integer): longword;
+var
+  i: integer;
+begin
+  for i := 0 to FuncCount-1 do
+    if FuncStartPC[i] = PCStart then begin
+      Result := Funcs[i].Id;
+      exit;
+    end;
+  Result := 0;
+end;
+
 begin
  StringCopy(Keywords[SymBEGIN],'BEGIN               ');
  StringCopy(Keywords[SymEND],'END                 ');
