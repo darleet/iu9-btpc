@@ -193,6 +193,22 @@ const MaximalCodeSize=262144;
       FunEOF=6;
       FunEOFLN=7;
 
+      OffEntry      =  8;
+      OffConstOff  = 12;
+      OffConstSize = 16;
+      OffTypeOff   = 20;
+      OffTypeSize  = 24;
+      OffGdataSize = 28;
+      OffGbase      = 32;
+      OffRSVD0      = 36;
+      OffFtabOff   = 40;
+      OffFtabSize  = 44;
+      OffCodeOff   = 48;
+      OffCodeSize  = 52;
+      OffDbgOff    = 56;
+      OffDbgSize   = 60;
+      HdrSize       = 64;
+
 type TAlfa=array[1..MaximalAlfa] of char;
 
      TIdent=record
@@ -220,39 +236,26 @@ type TAlfa=array[1..MaximalAlfa] of char;
       SubType:integer;
       Fields:integer;
      end;
-    
-     TBTBCHeader = packed record   { 64 bytes, LE }
-      Magic: array[0..3] of char;      { 'B','T','B','C' }
-      Version: word;                   { =1 }
-      Flags:   word;                   { =0, reserved }
-      EntryCodeOff:        longword;  { offset in Code section }
-      ConstOff, ConstSize: longword;  { =0 }
-      TypeOff, TypeSize:   longword;  { =0 }
-      GDataSize:           longword;  { global data size (zero-init) }
-      FTabOff, FTabSize:   longword;
-      CodeOff, CodeSize:   longword;
-      DbgOff, DbgSize:     longword;  { =0 }
-     end;
 
      TBTBCFunc = packed record          { 32 bytes }
-      Id:         longword;
-      NameIdx:    longword;            { 0xFFFFFFFF, if no name }
-      Level:      word;                { FunctionLevel }
-      HasSL:      word;                { 0/1 }
-      LocalsSize: longword;            { size of local vars (ENTER/LEAVE) }
-      ArgsBytes:  longword;            { args sum size (байт) }
-      CodeOff:    longword;            { offset of function code block in Code section }
-      CodeSize:   longword;            { length of function code block }
+      Id:         integer;
+      NameIdx:    integer;            { 0xFFFFFFFF, if no name }
+      Level:      integer;                { FunctionLevel }
+      HasSL:      integer;                { 0/1 }
+      LocalsSize: integer;            { size of local vars (ENTER/LEAVE) }
+      ArgsBytes:  integer;            { args sum size (байт) }
+      CodeOff:    integer;            { offset of function code block in Code section }
+      CodeSize:   integer;            { length of function code block }
      end;
 
-var FuncCount: integer = 0;
-    Funcs: array[0..MaximalFunctions-1] of TBTBCFunc;
+var FuncCount: integer;
+    Funcs: array[0..MaximalFunctions] of TBTBCFunc;
 
-    FuncIdentIdx: array[0..MaximalFunctions-1] of integer; { index in Identifiers[] }
-    FuncStartPC:  array[0..MaximalFunctions-1] of integer; { FunctionAddress (PC) }
+    FuncIdentIdx: array[0..MaximalFunctions] of integer; { index in Identifiers[] }
+    FuncStartPC:  array[0..MaximalFunctions] of integer; { FunctionAddress (PC) }
 
-    PCToOff: array[0..MaximalCodeSize-1] of longword;  { byte offset for every PC }
-    TotalCodeSize: longword;
+    PCToOff: array[0..MaximalCodeSize] of integer;  { byte offset for every PC }
+    TotalCodeSize: integer;
 
 var CurrentChar:char;
     CurrentColumn:integer;
@@ -269,6 +272,7 @@ var CurrentChar:char;
     IsLabeled:boolean;
     SymbolNameList:array[-1..MaximalList] of integer;
     IdentifierPosition:integer;
+    MaxIdentifierPosition:integer;  { track max for CollectFunctions }
     TypePosition:integer;
     Identifiers:array[0..MaximalIdentifiers] of TIdent;
     Types:array[1..MaximalTypes] of TType;
@@ -855,6 +859,8 @@ begin
   Error(103);
  end;
  IdentifierPosition:=IdentifierPosition+1;
+ if IdentifierPosition>MaxIdentifierPosition then
+  MaxIdentifierPosition:=IdentifierPosition;
  Identifiers[0].Name:=CurrentIdentifer;
  j:=SymbolNameList[CurrentLevel];
  while not StringCompare(Identifiers[j].Name,CurrentIdentifer) do begin
@@ -2761,12 +2767,7 @@ end;
 
 procedure OutAlign4;
 begin
-  while (OutputCodeDataSize and 3) <> 0 do EmitByte(0);
-end;
-
-procedure WriteAt(Ofs: longword; Buf: pointer; Len: longword);
-begin
-  Move(Buf^, OutputCodeData[Ofs], Len);
+  while (OutputCodeDataSize mod 4) <> 0 do EmitByte(0);
 end;
 
 procedure CollectFunctions;
@@ -2774,27 +2775,37 @@ var
   i: integer;
 begin
   FuncCount := 0;
-  for i := 1 to IdentifierPosition do
+  for i := 1 to MaxIdentifierPosition do
     if (Identifiers[i].Kind = IdFUNC)
       and (Identifiers[i].FunctionLevel >= 0)
       and (Identifiers[i].FunctionAddress >= 0)
     then begin
-      if FuncCount >= MaximalFunctions then Halt(99);
+      if FuncCount >= MaximalFunctions then Error(99);
       FuncIdentIdx[FuncCount] := i;
       FuncStartPC[FuncCount]  := Identifiers[i].FunctionAddress;
-      FillChar(Funcs[FuncCount], SizeOf(TBTBCFunc), 0);
+
+      Funcs[FuncCount].Id := 0;
+      Funcs[FuncCount].NameIdx := 0;
+      Funcs[FuncCount].Level := 0;
+      Funcs[FuncCount].HasSL := 0;
+      Funcs[FuncCount].LocalsSize := 0;
+      Funcs[FuncCount].ArgsBytes := 0;
+      Funcs[FuncCount].CodeOff := 0;
+      Funcs[FuncCount].CodeSize := 0;
+
       Funcs[FuncCount].Id      := FuncCount;
       Funcs[FuncCount].Level   := Identifiers[i].FunctionLevel;
       Funcs[FuncCount].HasSL   := ord(Identifiers[i].FunctionLevel > 0);
       Funcs[FuncCount].NameIdx := $FFFFFFFF;                               { TODO: names for funcs }
-      Inc(FuncCount);
+      
+      FuncCount := FuncCount + 1
     end;
 end;
 
 procedure BuildPCToOff;
 var
   pc: integer;
-  off: longword;
+  off: integer;
   op: integer;
 begin
   off := 0;
@@ -2802,63 +2813,84 @@ begin
   while pc < CodePosition do begin
     PCToOff[pc] := off;
     op := Code[pc];
-    Inc(off, 1);                           { opcode }
-    if op >= OPLdC then Inc(off, 4);       { imm32 }
-    if op >= OPLdC then Inc(pc, 2) else Inc(pc, 1);
+    off := off + 1;                           { opcode }
+    if op >= OPLdC then off := off + 4;       { imm32 }
+    if op >= OPLdC then pc := pc + 2 else pc := pc + 1;
   end;
   TotalCodeSize := off;
 end;
 
-function ComputeGlobalDataSize: longword;
-var
-  i, sz, ofs, gmax, t: integer;
+function Align4(x: integer): integer;
 begin
-  gmax := 0;
-  for i := 1 to IdentifierPosition do
-    if (Identifiers[i].Kind = IdVAR) and (Identifiers[i].VariableLevel = 0) then begin
-      t   := Identifiers[i].TypeDefinition;
-      sz  := Types[t].Size;
-      ofs := Identifiers[i].VariableAddress;
-      if (ofs + sz) > gmax then gmax := ofs + sz;
-    end;
-  Result := (gmax + 3) and not 3; { pad to 4 }
+ if (x mod 4)<>0 then Align4:=x+(4-(x mod 4)) else Align4:=x;
 end;
 
-function SumArgsBytes(FuncIdentIndex: integer): longword;
+procedure ComputeGlobalLayout(var GBase,GSize: integer);
+var
+ i,t:integer;
+ ofs,sz:integer;
+ minOfs,maxEnd:integer;
+begin
+ minOfs:=0;
+ maxEnd:=0;
+
+ for i:=1 to MaximalIdentifiers do begin
+  if (Identifiers[i].Kind=IdVAR) and (Identifiers[i].VariableLevel=0) then begin
+   ofs:=Identifiers[i].VariableAddress;
+   t:=Identifiers[i].TypeDefinition;
+   sz:=Align4(Types[t].Size);
+
+   if ofs<minOfs then minOfs:=ofs;
+   if (ofs+sz)>maxEnd then maxEnd:=ofs+sz;
+  end;
+ end;
+
+ if minOfs<0 then GBase:=-minOfs else GBase:=0;
+ GSize:=Align4(GBase+maxEnd);
+end;
+
+
+function SumArgsBytes(FuncIdentIndex: integer): integer;
 var
   p, t, last: integer;
-  sz: longword;
+  sz: integer;
+  res: integer;
 begin
-  Result := 0;
+  res := 0;
   last := Identifiers[FuncIdentIndex].LastParameter;
-  if last = 0 then exit;
-  p := FuncIdentIndex + 1;
-  while p <= last do begin
-    if Identifiers[p].ReferencedParameter then
-      sz := 4
-    else begin
-      t := Identifiers[p].TypeDefinition;
-      sz := Types[t].Size;
+  if last <> 0 then begin
+    p := FuncIdentIndex + 1;
+    while p <= last do begin
+      if Identifiers[p].ReferencedParameter then
+        sz := 4
+      else begin
+        t := Identifiers[p].TypeDefinition;
+        sz := Align4(Types[t].Size);
+      end;
+      res := res + sz;
+      p := p + 1;
     end;
-    if (sz and 3) <> 0 then sz := (sz + 3) and not 3; { pad to 4 }
-    Inc(Result, sz);
-    Inc(p);
   end;
+  SumArgsBytes := res;
 end;
 
-function FirstAdjSInRange(A, B: integer): longint;
+function FirstAdjSInRange(A, B: integer): integer;
 var
   pc: integer;
+  found: boolean;
+  res: integer;
 begin
-  Result := 0;
+  found := false;
+  res := 0;
   pc := A;
-  while pc < B do begin
+  while (pc < B) and (not found) do begin
     if Code[pc] = OPAdjS then begin
-      Result := Code[pc+1];  { imm32 }
-      exit;
+      res := Code[pc+1];
+      found := true;
     end;
-    if Code[pc] >= OPLdC then Inc(pc,2) else Inc(pc,1);
+    if Code[pc] >= OPLdC then pc := pc + 2 else pc := pc + 1;
   end;
+  FirstAdjSInRange := res;
 end;
 
 procedure FinalizeFunctions;
@@ -2879,29 +2911,30 @@ begin
   end;
 end;
 
-function FindFuncIdByPC(PCStart: integer): longword;
+function FindFuncIdByPC(PCStart: integer): integer;
 var
   i: integer;
+  found: boolean;
+  res: integer;
 begin
-  for i := 0 to FuncCount-1 do
+  found := false;
+  res := 0;
+  i := 0;
+  while (i < FuncCount) and (not found) do begin
     if FuncStartPC[i] = PCStart then begin
-      Result := Funcs[i].Id;
-      exit;
+      res := Funcs[i].Id;
+      found := true;
     end;
-  Result := 0;
+    i := i + 1;
+  end;
+  FindFuncIdByPC := res;
 end;
 
 procedure WriteBTBCModule;
 var
-  H: TBTBCHeader;
-  hdrPos, ftabPos, codePos: longword;
-  ftabSz, codeSz: longword;
-
-  procedure WriteHeaderPlaceholder;
-  var k: integer;
-  begin
-    for k := 1 to SizeOf(TBTBCHeader) do EmitByte(0);
-  end;
+  hdrPos, ftabPos, codePos: integer;
+  ftabSz, codeSz: integer;
+  gbase, gsize: integer;
 
   procedure WriteFunctionTable;
   var i: integer; rec: TBTBCFunc;
@@ -2910,8 +2943,8 @@ var
       rec := Funcs[i];
       EmitInt32(rec.Id);
       EmitInt32(rec.NameIdx);
-      EmitInt16(rec.Level);
-      EmitInt16(rec.HasSL);
+      EmitInt32(rec.Level);
+      EmitInt32(rec.HasSL);
       EmitInt32(rec.LocalsSize);
       EmitInt32(rec.ArgsBytes);
       EmitInt32(rec.CodeOff);
@@ -2922,20 +2955,20 @@ var
   procedure WriteCode;
   var
     pc, op, val, targetPC: integer;
-    rel: longint;
-    codeStartOff, currRelBase: longword;
+    rel: integer;
+    codeStartOff, currRelBase: integer;
   begin
     codeStartOff := OutputCodeDataSize;
     pc := 0;
     while pc < CodePosition do begin
       op := Code[pc];
-      EmitByte(byte(op));
+      EmitByte(op);
       if op >= OPLdC then begin
         val := Code[pc+1];
         if (op = OPJmp) or (op = OPJZ) then begin
           targetPC := val;
           currRelBase := (OutputCodeDataSize - codeStartOff) + 4;
-          rel := longint(PCToOff[targetPC]) - longint(currRelBase);
+          rel := PCToOff[targetPC] - currRelBase;
           EmitInt32(rel);
         end else if (op = OPCall) then begin
           EmitInt32( FindFuncIdByPC(val) );
@@ -2943,7 +2976,36 @@ var
           EmitInt32(val);
         end;
       end;
-      if op >= OPLdC then Inc(pc,2) else Inc(pc,1);
+      if op >= OPLdC then pc := pc + 2 else pc := pc + 1;
+    end;
+  end;
+
+  procedure EmitHeaderV2Placeholder;
+  var k: integer;
+  begin
+    { 'BTBC' }
+    EmitChar('B'); EmitChar('T'); EmitChar('B'); EmitChar('C');
+    EmitInt16(2);          { Version = 2 }
+    EmitInt16(0);          { Flags = 0 }
+
+    EmitInt32(0);          { EntryCodeOff = 0 }
+
+    EmitInt32(0); EmitInt32(0); { ConstOff/ConstSize }
+    EmitInt32(0); EmitInt32(0); { TypeOff/TypeSize }
+
+    EmitInt32(0);          { GDataSize (patch later) }
+    EmitInt32(0);          { GlobalBase (patch later) }
+    EmitInt32(0);          { Reserved0 }
+
+    EmitInt32(0); EmitInt32(0); { FTabOff/FTabSize (patch later) }
+    EmitInt32(0); EmitInt32(0); { CodeOff/CodeSize (patch later) }
+    EmitInt32(0); EmitInt32(0); { DbgOff/DbgSize }
+
+    { на всякий случай добить до 64 байт, если где-то иначе реализованы EmitInt16/32 }
+    k := (OutputCodeDataSize + 1) - hdrPos;
+    while k < HdrSize do begin
+      EmitByte(0);
+      k := k + 1;
     end;
   end;
 
@@ -2953,53 +3015,43 @@ begin
   BuildPCToOff;
   FinalizeFunctions;
 
-  { placeholder }
-  OutAlign4;
-  hdrPos := OutputCodeDataSize+1;
-  WriteHeaderPlaceholder;
+  ComputeGlobalLayout(gbase, gsize);
 
-  { TODO: ConstPool/TypeTable/Dbg }
+  { header placeholder }
+  OutAlign4;
+  hdrPos := OutputCodeDataSize + 1;
+  EmitHeaderV2Placeholder;
 
   { FunctionTable }
   OutAlign4;
-  ftabPos := OutputCodeDataSize+1;
+  ftabPos := OutputCodeDataSize + 1;
   WriteFunctionTable;
-  ftabSz := OutputCodeDataSize+1 - ftabPos;
+  ftabSz := OutputCodeDataSize + 1 - ftabPos;
 
   { Code }
   OutAlign4;
-  codePos := OutputCodeDataSize+1;
+  codePos := OutputCodeDataSize + 1;
   WriteCode;
-  codeSz := OutputCodeDataSize+1 - codePos;
+  codeSz := OutputCodeDataSize + 1 - codePos;
 
-  FillChar(H, SizeOf(H), 0);
-  H.Magic[0] := 'B'; H.Magic[1] := 'T'; H.Magic[2] := 'B'; H.Magic[3] := 'C';
-  H.Version      := 1;
-  H.Flags        := 0;
-  H.EntryCodeOff := 0;
-  H.ConstOff     := 0; H.ConstSize := 0;
-  H.TypeOff      := 0; H.TypeSize  := 0;
-  H.GDataSize    := ComputeGlobalDataSize;
-  H.FTabOff      := ftabPos-1;
-  H.FTabSize     := ftabSz;
-  H.CodeOff      := codePos-1;
-  H.CodeSize     := codeSz;
-  H.DbgOff       := 0; H.DbgSize := 0;
+  OutputCodePutInt32(hdrPos + OffGdataSize, gsize);
+  OutputCodePutInt32(hdrPos + OffGbase,     gbase);
 
-  { rewrite Header }
-  WriteAt(hdrPos, @H, SizeOf(H));
+  OutputCodePutInt32(hdrPos + OffFtabOff,  ftabPos - 1);
+  OutputCodePutInt32(hdrPos + OffFtabSize, ftabSz);
 
-  { to STDOUT }
+  OutputCodePutInt32(hdrPos + OffCodeOff,  codePos - 1);
+  OutputCodePutInt32(hdrPos + OffCodeSize, codeSz);
+
+  { stdout }
   WriteOutputCode;
 end;
 
 var
+  mode: integer;
   i: integer;
 begin
-  OutputBTBC := false;
-  for i := 1 to ParamCount do
-    if (ParamStr(i) = '-bc') or (ParamStr(i) = '--bytecode') then
-      OutputBTBC := true;
+  OutputBTBC := true;
 
   StringCopy(Keywords[SymBEGIN],'BEGIN               ');
   StringCopy(Keywords[SymEND],'END                 ');
@@ -3045,6 +3097,7 @@ begin
   SymbolNameList[-1]:=0;
   CurrentLevel:=-1;
   IdentifierPosition:=0;
+  MaxIdentifierPosition:=0;
 
   EnterSymbol('FALSE               ',IdCONST,TypeBOOL);
   Identifiers[IdentifierPosition].Value:=ord(false);
@@ -3100,6 +3153,8 @@ begin
 
   CurrentLine:=1;
   CurrentColumn:=0;
+
+  OutputCodeDataSize:=0;
 
   ReadChar;
   GetSymbol;

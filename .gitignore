@@ -3,3 +3,6 @@
 
 ### Other
 .DS_Store
+
+### Build files and binaries
+bin/
