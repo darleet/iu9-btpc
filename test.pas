@@ -1,4 +1,4 @@
-program Demo1;
+program Test1;
 
 var
   x, sum: integer;

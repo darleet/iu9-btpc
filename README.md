@@ -9,11 +9,9 @@ iu9-btpc/
 ├── src/
 │   ├── btpc64.pas      # Компилятор Pascal → BTBC
 │   └── vm/
-│       └── btvm.c      # Виртуальная машина BTBC
-├── bin/
-│   ├── win/            # Бинарники для Windows
-│   ├── linux/          # Бинарники для Linux
-│   └── mac/            # Бинарники для macOS
+│       ├── btvm.c      # Виртуальная машина BTBC
+│       └── btdb.c      # Отладчик для BTBC
+├── bin/                # Бинарники
 ├── docs/
 │   ├── btbc.md         # Спецификация формата BTBC
 │   └── opcodes.md      # Описание опкодов VM
@@ -33,9 +31,10 @@ iu9-btpc/
 make
 
 # Или по отдельности
-make btpc    # Только компилятор
-make btvm    # Только VM
-make test    # Скомпилировать test.pas
+make btpc      # Только компилятор
+make btvm      # Только VM
+make debugger  # Только отладчик
+make test      # Скомпилировать test.pas
 
 # Сборка с отладочной информацией
 make debug
@@ -49,20 +48,37 @@ make clean
 ### Компиляция Pascal-программы
 
 ```bash
-./bin/mac/btpc64 < program.pas > program.btbc
+./bin/btpc64 < program.pas > program.btbc
 ```
 
 ### Запуск байткода
 
 ```bash
-./bin/mac/btvm program.btbc
+./bin/btvm program.btbc
 ```
 
 ### Запуск с трассировкой (отладка)
 
 ```bash
-./bin/mac/btvm --trace program.btbc
+./bin/btvm --trace program.btbc
 ```
+
+### Отладка с помощью btdb
+
+```bash
+./bin/btdb program.btbc
+```
+
+Отладчик поддерживает:
+- Пошаговое выполнение (`s` или Enter)
+- Точки останова (`b <адрес>`)
+- Просмотр стека (`t [количество]`)
+- Просмотр памяти (`m <адрес> [количество]`)
+- Дизассемблирование (`i [адрес] [количество]`)
+- Просмотр регистров (`r`)
+- Непрерывное выполнение (`c`)
+
+Подробнее: [debugger.md](docs/debugger.md)
 
 ### Быстрый запуск тестового примера
 
@@ -129,6 +145,7 @@ end.
 
 - [Формат байткода BTBC](docs/btbc.md)
 - [Опкоды виртуальной машины](docs/opcodes.md)
+- [Руководство по отладчику](docs/debugger.md)
 
 ## Лицензия
 

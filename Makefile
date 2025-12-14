@@ -6,16 +6,12 @@ UNAME_S := $(shell uname -s 2>/dev/null)
 
 ifeq ($(OS),Windows_NT)
     PLATFORM := windows
-    BINDIR   := bin/win
 else ifeq ($(UNAME_S),Linux)
     PLATFORM := linux
-    BINDIR   := bin/linux
 else ifeq ($(UNAME_S),Darwin)
     PLATFORM := macos
-    BINDIR   := bin/mac
 else
     PLATFORM := unknown
-    BINDIR   := bin
 endif
 
 ifeq ($(PLATFORM),windows)
@@ -30,11 +26,14 @@ endif
 
 ### Sources
 BTVM_SRC   := src/vm/btvm.c
+BTDB_SRC   := src/vm/btdb.c
 BTPC_SRC   := src/btpc64.pas
 TEST_SRC   := test.pas
 
 ### Targets
+BINDIR := bin
 BTVM   := $(BINDIR)/btvm$(EXE)
+BTDB   := $(BINDIR)/btdb$(EXE)
 BTPC   := $(BINDIR)/btpc64$(EXE)
 TEST_BTBC := $(BINDIR)/test.btbc
 
@@ -52,14 +51,14 @@ CDBGFLAGS := $(CCOMMON) $(COPTDBG)
 FPCFLAGS := -O2
 
 ### Targets
-.PHONY: all release debug clean info btvm btpc test run
+.PHONY: all release debug clean info btvm btdb debugger btpc test run
 
 all: release
 
-release: $(BINDIR) btpc btvm test
+release: $(BINDIR) btpc btvm btdb test
 
 debug: CRELFLAGS := $(CDBGFLAGS)
-debug: $(BINDIR) btpc btvm test
+debug: $(BINDIR) btpc btvm btdb test
 
 $(BINDIR):
 	@mkdir -p $(BINDIR)
@@ -77,6 +76,13 @@ btvm: $(BTVM)
 $(BTVM): $(BTVM_SRC) | $(BINDIR)
 	@echo "Building btvm [$(PLATFORM), release]"
 	$(CC) $(CRELFLAGS) -o $(BTVM) $(BTVM_SRC)
+
+# Build Debugger
+btdb debugger: $(BTDB)
+
+$(BTDB): $(BTDB_SRC) | $(BINDIR)
+	@echo "Building btdb [$(PLATFORM), release]"
+	$(CC) $(CRELFLAGS) -o $(BTDB) $(BTDB_SRC)
 
 # Compile test program
 test: $(TEST_BTBC)
@@ -96,7 +102,7 @@ trace: $(TEST_BTBC) $(BTVM)
 	$(BTVM) --trace $(TEST_BTBC)
 
 clean:
-	rm -f $(BTVM) $(BTPC) $(TEST_BTBC)
+	rm -f $(BTVM) $(BTDB) $(BTPC) $(TEST_BTBC)
 	rm -f src/*.o src/*.ppu
 	rm -f *.btbc
 
@@ -110,4 +116,5 @@ info:
 	@echo "Bin dir     : $(BINDIR)"
 	@echo "btpc64      : $(BTPC)"
 	@echo "btvm        : $(BTVM)"
+	@echo "btdb        : $(BTDB)"
 	@echo "test.btbc   : $(TEST_BTBC)"
